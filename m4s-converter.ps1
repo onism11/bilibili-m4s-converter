@@ -330,16 +330,18 @@ function Show-ConverterWindow {
         $button.Anchor = 'Top, Right'
         $form.Controls.Add($button)
 
-        return @($textBox, $button)
+        return @($label, $textBox, $button)
     }
 
-    $inputRow = Add-FileRow -LabelText '输入 m4s' -Top 92 -ButtonText '浏览...'
-    $inputTextBox = $inputRow[0]
-    $inputButton = $inputRow[1]
+    $inputRow = Add-FileRow -LabelText '视频 m4s（MP4）' -Top 92 -ButtonText '浏览...'
+    $inputLabel = $inputRow[0]
+    $inputTextBox = $inputRow[1]
+    $inputButton = $inputRow[2]
 
     $audioRow = Add-FileRow -LabelText '配套音频（可选）' -Top 136 -ButtonText '浏览...'
-    $audioTextBox = $audioRow[0]
-    $audioButton = $audioRow[1]
+    $audioLabel = $audioRow[0]
+    $audioTextBox = $audioRow[1]
+    $audioButton = $audioRow[2]
 
     $formatLabel = New-Object System.Windows.Forms.Label
     $formatLabel.Text = '输出格式'
@@ -397,7 +399,7 @@ function Show-ConverterWindow {
     $form.Controls.Add($helpBox)
 
     $helpLabel = New-Object System.Windows.Forms.Label
-    $helpLabel.Text = "• 转 MP3：输入文件选择音频 m4s。`r`n• 转 MP4：输入文件选择视频 m4s；若视频没有声音，再选择同一视频的音频 m4s。"
+    $helpLabel.Text = "• 转 MP3：只需选择音频 m4s，不需要视频文件。`r`n• 转 MP4：选择视频 m4s；若视频没有声音，再选择同一视频的音频 m4s。"
     $helpLabel.AutoSize = $true
     $helpLabel.Location = New-Object System.Drawing.Point(14, 24)
     $helpBox.Controls.Add($helpLabel)
@@ -405,9 +407,11 @@ function Show-ConverterWindow {
     $autoOutputPath = $true
 
     $updateOutputPath = {
-        if ($autoOutputPath -and -not [string]::IsNullOrWhiteSpace($inputTextBox.Text)) {
+        $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
+        $activeInputPath = if ($selectedFormat -eq 'mp3') { $audioTextBox.Text } else { $inputTextBox.Text }
+        if ($autoOutputPath -and -not [string]::IsNullOrWhiteSpace($activeInputPath)) {
             $extension = '.' + $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
-            $outputTextBox.Text = [System.IO.Path]::ChangeExtension($inputTextBox.Text, $extension)
+            $outputTextBox.Text = [System.IO.Path]::ChangeExtension($activeInputPath, $extension)
         }
     }
 
@@ -429,14 +433,29 @@ function Show-ConverterWindow {
         & $updateOutputPath
     })
 
-    $audioButton.Add_Click({ & $chooseM4sFile $audioTextBox })
+    $audioButton.Add_Click({
+        & $chooseM4sFile $audioTextBox
+        $autoOutputPath = $true
+        & $updateOutputPath
+    })
 
     $inputTextBox.Add_TextChanged({ & $updateOutputPath })
+    $audioTextBox.Add_TextChanged({ & $updateOutputPath })
 
     $formatComboBox.Add_SelectedIndexChanged({
         $isMp4 = $formatComboBox.SelectedItem.ToString() -eq 'MP4'
-        $audioTextBox.Enabled = $isMp4
-        $audioButton.Enabled = $isMp4
+        if (-not $isMp4 -and
+            [string]::IsNullOrWhiteSpace($audioTextBox.Text) -and
+            -not [string]::IsNullOrWhiteSpace($inputTextBox.Text)) {
+            # 兼容旧界面：若用户已在第一栏选择音频，再切换到 MP3，自动移到音频栏。
+            $audioTextBox.Text = $inputTextBox.Text
+            $inputTextBox.Clear()
+        }
+
+        $inputTextBox.Enabled = $isMp4
+        $inputButton.Enabled = $isMp4
+        $inputLabel.ForeColor = if ($isMp4) { [System.Drawing.SystemColors]::ControlText } else { [System.Drawing.Color]::Gray }
+        $audioLabel.Text = if ($isMp4) { '配套音频（可选）' } else { '音频 m4s' }
         & $updateOutputPath
     })
 
@@ -465,12 +484,22 @@ function Show-ConverterWindow {
 
     $convertButton.Add_Click({
         try {
-            if ([string]::IsNullOrWhiteSpace($inputTextBox.Text)) {
-                throw '请选择输入 m4s 文件。'
+            $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
+            if ($selectedFormat -eq 'mp3') {
+                if ([string]::IsNullOrWhiteSpace($audioTextBox.Text)) {
+                    throw '请选择音频 m4s 文件。转 MP3 不需要视频文件。'
+                }
+                $selectedSource = $audioTextBox.Text.Trim()
+                $selectedAudio = ''
+            }
+            else {
+                if ([string]::IsNullOrWhiteSpace($inputTextBox.Text)) {
+                    throw '请选择视频 m4s 文件。'
+                }
+                $selectedSource = $inputTextBox.Text.Trim()
+                $selectedAudio = $audioTextBox.Text.Trim()
             }
 
-            $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
-            $selectedAudio = if ($selectedFormat -eq 'mp4') { $audioTextBox.Text.Trim() } else { '' }
             $selectedOutput = $outputTextBox.Text.Trim()
             $selectedBitrate = [int]($bitrateComboBox.SelectedItem.ToString().Split(' ')[0])
 
@@ -494,7 +523,7 @@ function Show-ConverterWindow {
             $form.Refresh()
 
             $resultPath = Invoke-M4sConversion `
-                -SourcePath $inputTextBox.Text.Trim() `
+                -SourcePath $selectedSource `
                 -SeparateAudioPath $selectedAudio `
                 -OutputFormat $selectedFormat `
                 -DestinationPath $selectedOutput `
