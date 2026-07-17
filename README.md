@@ -2,7 +2,7 @@
   <img src="assets/app-icon.png" width="128" alt="B站 M4S 转换器图标">
   <h1>B站 M4S 转换器</h1>
   <p><strong>把零散的 M4S，变成随处可播的 MP3 / MP4。</strong></p>
-  <p>一个轻量、开源、无需安装的 Windows 图形工具。</p>
+  <p>一个轻量、源代码公开、无需安装的 Windows 图形工具。</p>
 
   [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-1677FF?style=flat-square&logo=windows)](https://github.com/onism11/bilibili-m4s-converter/releases/latest)
   [![GitHub Release](https://img.shields.io/github/v/release/onism11/bilibili-m4s-converter?style=flat-square&color=1677FF)](https://github.com/onism11/bilibili-m4s-converter/releases/latest)
