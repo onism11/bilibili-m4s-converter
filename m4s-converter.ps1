@@ -1,0 +1,559 @@
+﻿[CmdletBinding()]
+param(
+    [Parameter(Position = 0)]
+    [string]$InputPath,
+
+    [string]$AudioPath,
+
+    [ValidateSet('mp3', 'mp4')]
+    [string]$Format,
+
+    [string]$OutputPath,
+
+    [ValidateRange(64, 320)]
+    [int]$AudioBitrate = 192,
+
+    [switch]$Overwrite,
+
+    [switch]$Gui
+)
+
+Set-StrictMode -Version 2.0
+$ErrorActionPreference = 'Stop'
+
+function Find-MediaTool {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $command = Get-Command $Name -ErrorAction SilentlyContinue
+    if (-not $command) {
+        throw "未找到 $Name。请先安装 FFmpeg，并把 ffmpeg.exe 加入 PATH。"
+    }
+
+    return $command.Source
+}
+
+function Resolve-InputFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "$Label 不存在：$Path"
+    }
+
+    return (Resolve-Path -LiteralPath $Path).Path
+}
+
+function Get-OutputFilePath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputFile,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputFormat,
+
+        [string]$RequestedPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RequestedPath)) {
+        return [System.IO.Path]::ChangeExtension($InputFile, ".$OutputFormat")
+    }
+
+    $fullPath = [System.IO.Path]::GetFullPath($RequestedPath)
+    $extension = [System.IO.Path]::GetExtension($fullPath)
+    if ([string]::IsNullOrWhiteSpace($extension)) {
+        $fullPath += ".$OutputFormat"
+    }
+    elseif ($extension -ne ".$OutputFormat") {
+        throw "输出文件扩展名必须是 .$OutputFormat：$fullPath"
+    }
+
+    return $fullPath
+}
+
+function Get-NormalizedMediaPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TemporaryDirectory
+    )
+
+    # 部分 B 站缓存会在正常 MP4/M4S 文件头前加 9 个 ASCII 字符“0”。
+    # 不修改源文件；检测到这种前缀时，只在临时目录中生成去前缀副本。
+    $stream = [System.IO.File]::OpenRead($SourcePath)
+    try {
+        $headerLength = [Math]::Min(64, [int]$stream.Length)
+        $header = New-Object byte[] $headerLength
+        $readLength = $stream.Read($header, 0, $headerLength)
+
+        $ftypIndex = -1
+        for ($index = 0; $index -le $readLength - 4; $index++) {
+            if ($header[$index] -eq 0x66 -and
+                $header[$index + 1] -eq 0x74 -and
+                $header[$index + 2] -eq 0x79 -and
+                $header[$index + 3] -eq 0x70) {
+                $ftypIndex = $index
+                break
+            }
+        }
+
+        $prefixLength = $ftypIndex - 4
+        $hasAsciiZeroPrefix = $prefixLength -gt 0 -and $prefixLength -le 32
+        if ($hasAsciiZeroPrefix) {
+            for ($index = 0; $index -lt $prefixLength; $index++) {
+                if ($header[$index] -ne 0x30) {
+                    $hasAsciiZeroPrefix = $false
+                    break
+                }
+            }
+        }
+
+        if (-not $hasAsciiZeroPrefix) {
+            return $SourcePath
+        }
+
+        $normalizedPath = Join-Path $TemporaryDirectory ([System.IO.Path]::GetFileName($SourcePath))
+        if ([System.StringComparer]::OrdinalIgnoreCase.Equals($normalizedPath, $SourcePath)) {
+            $normalizedPath = Join-Path $TemporaryDirectory ("normalized-" + [System.IO.Path]::GetFileName($SourcePath))
+        }
+
+        $stream.Position = $prefixLength
+        $outputStream = [System.IO.File]::Create($normalizedPath)
+        try {
+            $stream.CopyTo($outputStream)
+        }
+        finally {
+            $outputStream.Dispose()
+        }
+
+        return $normalizedPath
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Invoke-Ffmpeg {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FfmpegPath,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    Write-Verbose ("ffmpeg " + ($Arguments -join ' '))
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 会把原生程序的标准错误流包装成 ErrorRecord；
+        # FFmpeg 恰好把正常进度也写在该流，因此只在调用期间按退出码判断。
+        $ErrorActionPreference = 'Continue'
+        $ffmpegOutput = & $FfmpegPath @Arguments 2>&1
+        $ffmpegExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($ffmpegExitCode -ne 0) {
+        $details = $ffmpegOutput -join [Environment]::NewLine
+        throw "FFmpeg 转换失败。`r`n$details"
+    }
+}
+
+function Invoke-M4sConversion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+
+        [string]$SeparateAudioPath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('mp3', 'mp4')]
+        [string]$OutputFormat,
+
+        [string]$DestinationPath,
+
+        [ValidateRange(64, 320)]
+        [int]$Bitrate = 192,
+
+        [switch]$Force
+    )
+
+    $ffmpegPath = Find-MediaTool -Name 'ffmpeg'
+    $sourceFile = Resolve-InputFile -Path $SourcePath -Label '输入文件'
+
+    if ($OutputFormat -eq 'mp3' -and -not [string]::IsNullOrWhiteSpace($SeparateAudioPath)) {
+        throw '输出 MP3 时不需要填写配套音频文件。'
+    }
+
+    $audioFile = $null
+    if (-not [string]::IsNullOrWhiteSpace($SeparateAudioPath)) {
+        $audioFile = Resolve-InputFile -Path $SeparateAudioPath -Label '配套音频文件'
+    }
+
+    $destinationFile = Get-OutputFilePath -InputFile $sourceFile -OutputFormat $OutputFormat -RequestedPath $DestinationPath
+    if (Test-Path -LiteralPath $destinationFile) {
+        if (-not $Force) {
+            throw "输出文件已存在：$destinationFile。使用 -Overwrite 可覆盖。"
+        }
+    }
+
+    $destinationDirectory = Split-Path -Parent $destinationFile
+    if (-not (Test-Path -LiteralPath $destinationDirectory -PathType Container)) {
+        New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
+    }
+
+    $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("bilibili-m4s-converter-" + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
+
+    try {
+        $normalizedSource = Get-NormalizedMediaPath -SourcePath $sourceFile -TemporaryDirectory $temporaryDirectory
+        $normalizedAudio = $null
+        if ($audioFile) {
+            $normalizedAudio = Get-NormalizedMediaPath -SourcePath $audioFile -TemporaryDirectory $temporaryDirectory
+        }
+
+        $overwriteArgument = if ($Force) { '-y' } else { '-n' }
+
+        if ($OutputFormat -eq 'mp3') {
+            $arguments = @(
+                '-hide_banner', $overwriteArgument,
+                '-i', $normalizedSource,
+                '-map', '0:a:0', '-vn',
+                '-c:a', 'libmp3lame', '-b:a', "${Bitrate}k",
+                $destinationFile
+            )
+            Invoke-Ffmpeg -FfmpegPath $ffmpegPath -Arguments $arguments
+        }
+        else {
+            if ($normalizedAudio) {
+                $arguments = @(
+                    '-hide_banner', $overwriteArgument,
+                    '-fflags', '+genpts', '-i', $normalizedSource,
+                    '-fflags', '+genpts', '-i', $normalizedAudio,
+                    '-map', '0:v:0', '-map', '1:a:0',
+                    '-c:v', 'copy', '-c:a', 'aac', '-b:a', "${Bitrate}k",
+                    '-shortest', '-movflags', '+faststart',
+                    $destinationFile
+                )
+            }
+            else {
+                $arguments = @(
+                    '-hide_banner', $overwriteArgument,
+                    '-fflags', '+genpts', '-i', $normalizedSource,
+                    '-map', '0:v:0', '-map', '0:a:0?',
+                    '-c:v', 'copy', '-c:a', 'aac', '-b:a', "${Bitrate}k",
+                    '-movflags', '+faststart',
+                    $destinationFile
+                )
+            }
+
+            Invoke-Ffmpeg -FfmpegPath $ffmpegPath -Arguments $arguments
+        }
+
+        return $destinationFile
+    }
+    catch {
+        if (Test-Path -LiteralPath $destinationFile -PathType Leaf) {
+            Remove-Item -LiteralPath $destinationFile -Force -ErrorAction SilentlyContinue
+        }
+        throw
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryDirectory -PathType Container) {
+            Remove-Item -LiteralPath $temporaryDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Show-ConverterWindow {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    [System.Windows.Forms.Application]::EnableVisualStyles()
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = 'B站 M4S 转换器'
+    $form.ClientSize = New-Object System.Drawing.Size(720, 430)
+    $form.MinimumSize = New-Object System.Drawing.Size(736, 469)
+    $form.StartPosition = 'CenterScreen'
+    $form.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
+
+    $title = New-Object System.Windows.Forms.Label
+    $title.Text = 'B站 M4S 转换器'
+    $title.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 17, [System.Drawing.FontStyle]::Bold)
+    $title.AutoSize = $true
+    $title.Location = New-Object System.Drawing.Point(24, 20)
+    $form.Controls.Add($title)
+
+    $description = New-Object System.Windows.Forms.Label
+    $description.Text = '音频 m4s 可转 MP3；视频 m4s 可单独转 MP4，也可与配套音频 m4s 合并。'
+    $description.AutoSize = $true
+    $description.ForeColor = [System.Drawing.Color]::DimGray
+    $description.Location = New-Object System.Drawing.Point(28, 58)
+    $form.Controls.Add($description)
+
+    function Add-FileRow {
+        param(
+            [string]$LabelText,
+            [int]$Top,
+            [string]$ButtonText
+        )
+
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = $LabelText
+        $label.AutoSize = $true
+        $label.Location = New-Object System.Drawing.Point(28, ($Top + 7))
+        $form.Controls.Add($label)
+
+        $textBox = New-Object System.Windows.Forms.TextBox
+        $textBox.Location = New-Object System.Drawing.Point(142, $Top)
+        $textBox.Size = New-Object System.Drawing.Size(462, 28)
+        $textBox.Anchor = 'Top, Left, Right'
+        $form.Controls.Add($textBox)
+
+        $button = New-Object System.Windows.Forms.Button
+        $button.Text = $ButtonText
+        $button.Location = New-Object System.Drawing.Point(616, ($Top - 1))
+        $button.Size = New-Object System.Drawing.Size(76, 30)
+        $button.Anchor = 'Top, Right'
+        $form.Controls.Add($button)
+
+        return @($textBox, $button)
+    }
+
+    $inputRow = Add-FileRow -LabelText '输入 m4s' -Top 92 -ButtonText '浏览...'
+    $inputTextBox = $inputRow[0]
+    $inputButton = $inputRow[1]
+
+    $audioRow = Add-FileRow -LabelText '配套音频（可选）' -Top 136 -ButtonText '浏览...'
+    $audioTextBox = $audioRow[0]
+    $audioButton = $audioRow[1]
+
+    $formatLabel = New-Object System.Windows.Forms.Label
+    $formatLabel.Text = '输出格式'
+    $formatLabel.AutoSize = $true
+    $formatLabel.Location = New-Object System.Drawing.Point(28, 188)
+    $form.Controls.Add($formatLabel)
+
+    $formatComboBox = New-Object System.Windows.Forms.ComboBox
+    $formatComboBox.DropDownStyle = 'DropDownList'
+    $formatComboBox.Items.AddRange(@('MP4', 'MP3'))
+    $formatComboBox.SelectedIndex = 0
+    $formatComboBox.Location = New-Object System.Drawing.Point(142, 181)
+    $formatComboBox.Size = New-Object System.Drawing.Size(112, 28)
+    $form.Controls.Add($formatComboBox)
+
+    $bitrateLabel = New-Object System.Windows.Forms.Label
+    $bitrateLabel.Text = '音频码率'
+    $bitrateLabel.AutoSize = $true
+    $bitrateLabel.Location = New-Object System.Drawing.Point(288, 188)
+    $form.Controls.Add($bitrateLabel)
+
+    $bitrateComboBox = New-Object System.Windows.Forms.ComboBox
+    $bitrateComboBox.DropDownStyle = 'DropDownList'
+    $bitrateComboBox.Items.AddRange(@('128 kbps', '192 kbps', '256 kbps', '320 kbps'))
+    $bitrateComboBox.SelectedIndex = 1
+    $bitrateComboBox.Location = New-Object System.Drawing.Point(358, 181)
+    $bitrateComboBox.Size = New-Object System.Drawing.Size(118, 28)
+    $form.Controls.Add($bitrateComboBox)
+
+    $outputRow = Add-FileRow -LabelText '输出文件' -Top 226 -ButtonText '另存为...'
+    $outputTextBox = $outputRow[0]
+    $outputButton = $outputRow[1]
+
+    $statusLabel = New-Object System.Windows.Forms.Label
+    $statusLabel.Text = '就绪'
+    $statusLabel.AutoEllipsis = $true
+    $statusLabel.Location = New-Object System.Drawing.Point(28, 280)
+    $statusLabel.Size = New-Object System.Drawing.Size(560, 24)
+    $statusLabel.ForeColor = [System.Drawing.Color]::DimGray
+    $form.Controls.Add($statusLabel)
+
+    $convertButton = New-Object System.Windows.Forms.Button
+    $convertButton.Text = '开始转换'
+    $convertButton.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10, [System.Drawing.FontStyle]::Bold)
+    $convertButton.Location = New-Object System.Drawing.Point(548, 270)
+    $convertButton.Size = New-Object System.Drawing.Size(144, 42)
+    $convertButton.Anchor = 'Top, Right'
+    $form.Controls.Add($convertButton)
+
+    $helpBox = New-Object System.Windows.Forms.GroupBox
+    $helpBox.Text = '怎么选文件？'
+    $helpBox.Location = New-Object System.Drawing.Point(28, 326)
+    $helpBox.Size = New-Object System.Drawing.Size(664, 80)
+    $helpBox.Anchor = 'Top, Bottom, Left, Right'
+    $form.Controls.Add($helpBox)
+
+    $helpLabel = New-Object System.Windows.Forms.Label
+    $helpLabel.Text = "• 转 MP3：输入文件选择音频 m4s。`r`n• 转 MP4：输入文件选择视频 m4s；若视频没有声音，再选择同一视频的音频 m4s。"
+    $helpLabel.AutoSize = $true
+    $helpLabel.Location = New-Object System.Drawing.Point(14, 24)
+    $helpBox.Controls.Add($helpLabel)
+
+    $autoOutputPath = $true
+
+    $updateOutputPath = {
+        if ($autoOutputPath -and -not [string]::IsNullOrWhiteSpace($inputTextBox.Text)) {
+            $extension = '.' + $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
+            $outputTextBox.Text = [System.IO.Path]::ChangeExtension($inputTextBox.Text, $extension)
+        }
+    }
+
+    $chooseM4sFile = {
+        param($targetTextBox)
+
+        $dialog = New-Object System.Windows.Forms.OpenFileDialog
+        $dialog.Filter = 'M4S 媒体分片 (*.m4s)|*.m4s|所有文件 (*.*)|*.*'
+        $dialog.CheckFileExists = $true
+        if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+            $targetTextBox.Text = $dialog.FileName
+        }
+        $dialog.Dispose()
+    }
+
+    $inputButton.Add_Click({
+        & $chooseM4sFile $inputTextBox
+        $autoOutputPath = $true
+        & $updateOutputPath
+    })
+
+    $audioButton.Add_Click({ & $chooseM4sFile $audioTextBox })
+
+    $inputTextBox.Add_TextChanged({ & $updateOutputPath })
+
+    $formatComboBox.Add_SelectedIndexChanged({
+        $isMp4 = $formatComboBox.SelectedItem.ToString() -eq 'MP4'
+        $audioTextBox.Enabled = $isMp4
+        $audioButton.Enabled = $isMp4
+        & $updateOutputPath
+    })
+
+    $outputTextBox.Add_TextChanged({
+        if ($outputTextBox.Focused) {
+            $autoOutputPath = $false
+        }
+    })
+
+    $outputButton.Add_Click({
+        $dialog = New-Object System.Windows.Forms.SaveFileDialog
+        $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
+        $dialog.Filter = if ($selectedFormat -eq 'mp4') { 'MP4 视频 (*.mp4)|*.mp4' } else { 'MP3 音频 (*.mp3)|*.mp3' }
+        $dialog.DefaultExt = $selectedFormat
+        $dialog.AddExtension = $true
+        if (-not [string]::IsNullOrWhiteSpace($outputTextBox.Text)) {
+            $dialog.FileName = [System.IO.Path]::GetFileName($outputTextBox.Text)
+            $dialog.InitialDirectory = [System.IO.Path]::GetDirectoryName($outputTextBox.Text)
+        }
+        if ($dialog.ShowDialog($form) -eq [System.Windows.Forms.DialogResult]::OK) {
+            $autoOutputPath = $false
+            $outputTextBox.Text = $dialog.FileName
+        }
+        $dialog.Dispose()
+    })
+
+    $convertButton.Add_Click({
+        try {
+            if ([string]::IsNullOrWhiteSpace($inputTextBox.Text)) {
+                throw '请选择输入 m4s 文件。'
+            }
+
+            $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
+            $selectedAudio = if ($selectedFormat -eq 'mp4') { $audioTextBox.Text.Trim() } else { '' }
+            $selectedOutput = $outputTextBox.Text.Trim()
+            $selectedBitrate = [int]($bitrateComboBox.SelectedItem.ToString().Split(' ')[0])
+
+            if (Test-Path -LiteralPath $selectedOutput -PathType Leaf) {
+                $answer = [System.Windows.Forms.MessageBox]::Show(
+                    $form,
+                    "输出文件已存在，是否覆盖？`r`n$selectedOutput",
+                    '确认覆盖',
+                    [System.Windows.Forms.MessageBoxButtons]::YesNo,
+                    [System.Windows.Forms.MessageBoxIcon]::Question
+                )
+                if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
+                    return
+                }
+            }
+
+            $convertButton.Enabled = $false
+            $form.UseWaitCursor = $true
+            $statusLabel.ForeColor = [System.Drawing.Color]::DarkOrange
+            $statusLabel.Text = '正在转换，请稍候……'
+            $form.Refresh()
+
+            $resultPath = Invoke-M4sConversion `
+                -SourcePath $inputTextBox.Text.Trim() `
+                -SeparateAudioPath $selectedAudio `
+                -OutputFormat $selectedFormat `
+                -DestinationPath $selectedOutput `
+                -Bitrate $selectedBitrate `
+                -Force
+
+            $statusLabel.ForeColor = [System.Drawing.Color]::ForestGreen
+            $statusLabel.Text = "转换完成：$resultPath"
+            [System.Windows.Forms.MessageBox]::Show(
+                $form,
+                "转换完成！`r`n$resultPath",
+                '完成',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Information
+            ) | Out-Null
+        }
+        catch {
+            $statusLabel.ForeColor = [System.Drawing.Color]::Firebrick
+            $statusLabel.Text = '转换失败'
+            [System.Windows.Forms.MessageBox]::Show(
+                $form,
+                $_.Exception.Message,
+                '转换失败',
+                [System.Windows.Forms.MessageBoxButtons]::OK,
+                [System.Windows.Forms.MessageBoxIcon]::Error
+            ) | Out-Null
+        }
+        finally {
+            $form.UseWaitCursor = $false
+            $convertButton.Enabled = $true
+        }
+    })
+
+    $form.Add_Shown({ $form.Activate() })
+    [void]$form.ShowDialog()
+    $form.Dispose()
+}
+
+try {
+    if ($Gui -or [string]::IsNullOrWhiteSpace($InputPath)) {
+        Show-ConverterWindow
+    }
+    else {
+        if ([string]::IsNullOrWhiteSpace($Format)) {
+            throw '命令行模式必须使用 -Format 指定 mp3 或 mp4。'
+        }
+
+        $result = Invoke-M4sConversion `
+            -SourcePath $InputPath `
+            -SeparateAudioPath $AudioPath `
+            -OutputFormat $Format `
+            -DestinationPath $OutputPath `
+            -Bitrate $AudioBitrate `
+            -Force:$Overwrite
+
+        Write-Host "转换完成：$result" -ForegroundColor Green
+    }
+}
+catch {
+    Write-Error $_.Exception.Message
+    $global:LASTEXITCODE = 1
+}
