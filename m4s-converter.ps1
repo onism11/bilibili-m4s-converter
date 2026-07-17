@@ -372,14 +372,14 @@ function Show-ConverterWindow {
     $form.Controls.Add($bitrateComboBox)
 
     $outputRow = Add-FileRow -LabelText '输出文件' -Top 226 -ButtonText '另存为...'
-    $outputTextBox = $outputRow[0]
-    $outputButton = $outputRow[1]
+    $outputTextBox = $outputRow[1]
+    $outputButton = $outputRow[2]
 
     $statusLabel = New-Object System.Windows.Forms.Label
     $statusLabel.Text = '就绪'
     $statusLabel.AutoEllipsis = $true
     $statusLabel.Location = New-Object System.Drawing.Point(28, 280)
-    $statusLabel.Size = New-Object System.Drawing.Size(560, 24)
+    $statusLabel.Size = New-Object System.Drawing.Size(500, 24)
     $statusLabel.ForeColor = [System.Drawing.Color]::DimGray
     $form.Controls.Add($statusLabel)
 
