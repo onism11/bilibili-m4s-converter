@@ -290,6 +290,11 @@ function Show-ConverterWindow {
     $form.StartPosition = 'CenterScreen'
     $form.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
 
+    $iconPath = Join-Path $PSScriptRoot 'assets\app-icon.ico'
+    if (Test-Path -LiteralPath $iconPath -PathType Leaf) {
+        $form.Icon = New-Object System.Drawing.Icon($iconPath)
+    }
+
     $title = New-Object System.Windows.Forms.Label
     $title.Text = 'B站 M4S 转换器'
     $title.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 17, [System.Drawing.FontStyle]::Bold)
