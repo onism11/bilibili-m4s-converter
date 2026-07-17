@@ -19,6 +19,8 @@
 
 ## 功能
 
+<img width="887" height="572" alt="image" src="https://github.com/user-attachments/assets/13a90ef9-1a49-40df-8d62-404f079eedbb" />
+
 - 🎵 音频 `.m4s` 一键转换为 `.mp3`
 - 🎬 视频 `.m4s` 快速封装为 `.mp4`
 - 🔊 合并独立的视频 `.m4s` 与音频 `.m4s`
