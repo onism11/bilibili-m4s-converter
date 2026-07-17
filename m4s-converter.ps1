@@ -283,265 +283,134 @@ function Show-ConverterWindow {
 
     [System.Windows.Forms.Application]::EnableVisualStyles()
 
-    $backgroundColor = [System.Drawing.ColorTranslator]::FromHtml('#F5F7FA')
-    $surfaceColor = [System.Drawing.ColorTranslator]::FromHtml('#FFFFFF')
-    $primaryColor = [System.Drawing.ColorTranslator]::FromHtml('#1677FF')
-    $primaryHoverColor = [System.Drawing.ColorTranslator]::FromHtml('#0F60D5')
-    $primarySoftColor = [System.Drawing.ColorTranslator]::FromHtml('#EAF3FF')
-    $textColor = [System.Drawing.ColorTranslator]::FromHtml('#1F2329')
-    $mutedColor = [System.Drawing.ColorTranslator]::FromHtml('#646A73')
-    $borderColor = [System.Drawing.ColorTranslator]::FromHtml('#DDE2E9')
-    $disabledColor = [System.Drawing.ColorTranslator]::FromHtml('#A8ADB5')
-
     $form = New-Object System.Windows.Forms.Form
     $form.Text = 'B站 M4S 转换器'
-    $form.ClientSize = New-Object System.Drawing.Size(760, 700)
-    $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-    $form.MaximizeBox = $false
+    $form.ClientSize = New-Object System.Drawing.Size(720, 430)
+    $form.MinimumSize = New-Object System.Drawing.Size(736, 469)
     $form.StartPosition = 'CenterScreen'
     $form.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
-    $form.BackColor = $backgroundColor
-
-    $headerPanel = New-Object System.Windows.Forms.Panel
-    $headerPanel.Location = New-Object System.Drawing.Point(0, 0)
-    $headerPanel.Size = New-Object System.Drawing.Size(760, 86)
-    $headerPanel.BackColor = $surfaceColor
-    $form.Controls.Add($headerPanel)
 
     $title = New-Object System.Windows.Forms.Label
     $title.Text = 'B站 M4S 转换器'
-    $title.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 18, [System.Drawing.FontStyle]::Bold)
-    $title.ForeColor = $textColor
+    $title.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 17, [System.Drawing.FontStyle]::Bold)
     $title.AutoSize = $true
-    $title.Location = New-Object System.Drawing.Point(28, 15)
-    $headerPanel.Controls.Add($title)
+    $title.Location = New-Object System.Drawing.Point(24, 20)
+    $form.Controls.Add($title)
 
     $description = New-Object System.Windows.Forms.Label
-    $description.Text = '本地转换 · MP3 音频提取 · MP4 音视频合并 · 不修改源文件'
+    $description.Text = '音频 m4s 可转 MP3；视频 m4s 可单独转 MP4，也可与配套音频 m4s 合并。'
     $description.AutoSize = $true
-    $description.ForeColor = $mutedColor
-    $description.Location = New-Object System.Drawing.Point(31, 54)
-    $headerPanel.Controls.Add($description)
+    $description.ForeColor = [System.Drawing.Color]::DimGray
+    $description.Location = New-Object System.Drawing.Point(28, 58)
+    $form.Controls.Add($description)
+
+    function Add-FileRow {
+        param(
+            [string]$LabelText,
+            [int]$Top,
+            [string]$ButtonText
+        )
+
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = $LabelText
+        $label.AutoSize = $true
+        $label.Location = New-Object System.Drawing.Point(28, ($Top + 7))
+        $form.Controls.Add($label)
+
+        $textBox = New-Object System.Windows.Forms.TextBox
+        $textBox.Location = New-Object System.Drawing.Point(142, $Top)
+        $textBox.Size = New-Object System.Drawing.Size(462, 28)
+        $textBox.Anchor = 'Top, Left, Right'
+        $form.Controls.Add($textBox)
+
+        $button = New-Object System.Windows.Forms.Button
+        $button.Text = $ButtonText
+        $button.Location = New-Object System.Drawing.Point(616, ($Top - 1))
+        $button.Size = New-Object System.Drawing.Size(76, 30)
+        $button.Anchor = 'Top, Right'
+        $form.Controls.Add($button)
+
+        return @($label, $textBox, $button)
+    }
+
+    $inputRow = Add-FileRow -LabelText '视频 m4s（MP4）' -Top 92 -ButtonText '浏览...'
+    $inputLabel = $inputRow[0]
+    $inputTextBox = $inputRow[1]
+    $inputButton = $inputRow[2]
+
+    $audioRow = Add-FileRow -LabelText '配套音频（可选）' -Top 136 -ButtonText '浏览...'
+    $audioLabel = $audioRow[0]
+    $audioTextBox = $audioRow[1]
+    $audioButton = $audioRow[2]
 
     $formatLabel = New-Object System.Windows.Forms.Label
     $formatLabel.Text = '输出格式'
     $formatLabel.AutoSize = $true
-    $formatLabel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9, [System.Drawing.FontStyle]::Bold)
-    $formatLabel.ForeColor = $textColor
-    $formatLabel.Location = New-Object System.Drawing.Point(28, 109)
+    $formatLabel.Location = New-Object System.Drawing.Point(28, 188)
     $form.Controls.Add($formatLabel)
 
-    $formatMp4Button = New-Object System.Windows.Forms.RadioButton
-    $formatMp4Button.Appearance = [System.Windows.Forms.Appearance]::Button
-    $formatMp4Button.Text = 'MP4'
-    $formatMp4Button.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $formatMp4Button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $formatMp4Button.Location = New-Object System.Drawing.Point(120, 99)
-    $formatMp4Button.Size = New-Object System.Drawing.Size(112, 36)
-    $formatMp4Button.Checked = $true
-    $formatMp4Button.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $form.Controls.Add($formatMp4Button)
-
-    $formatMp3Button = New-Object System.Windows.Forms.RadioButton
-    $formatMp3Button.Appearance = [System.Windows.Forms.Appearance]::Button
-    $formatMp3Button.Text = 'MP3'
-    $formatMp3Button.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-    $formatMp3Button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $formatMp3Button.Location = New-Object System.Drawing.Point(231, 99)
-    $formatMp3Button.Size = New-Object System.Drawing.Size(112, 36)
-    $formatMp3Button.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $form.Controls.Add($formatMp3Button)
-
-    function Add-FileCard {
-        param(
-            [string]$TitleText,
-            [string]$SubtitleText,
-            [string]$IconText,
-            [int]$Top,
-            [System.Drawing.Color]$AccentColor
-        )
-
-        $card = New-Object System.Windows.Forms.Panel
-        $card.Location = New-Object System.Drawing.Point(28, $Top)
-        $card.Size = New-Object System.Drawing.Size(704, 108)
-        $card.BackColor = $surfaceColor
-        $card.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-        $form.Controls.Add($card)
-
-        $iconPanel = New-Object System.Windows.Forms.Panel
-        $iconPanel.Location = New-Object System.Drawing.Point(16, 15)
-        $iconPanel.Size = New-Object System.Drawing.Size(42, 42)
-        $iconPanel.BackColor = $primarySoftColor
-        $card.Controls.Add($iconPanel)
-
-        $iconLabel = New-Object System.Windows.Forms.Label
-        $iconLabel.Text = $IconText
-        $iconLabel.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 15, [System.Drawing.FontStyle]::Bold)
-        $iconLabel.ForeColor = $AccentColor
-        $iconLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
-        $iconLabel.Dock = [System.Windows.Forms.DockStyle]::Fill
-        $iconPanel.Controls.Add($iconLabel)
-
-        $cardTitle = New-Object System.Windows.Forms.Label
-        $cardTitle.Text = $TitleText
-        $cardTitle.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10, [System.Drawing.FontStyle]::Bold)
-        $cardTitle.ForeColor = $textColor
-        $cardTitle.AutoSize = $true
-        $cardTitle.Location = New-Object System.Drawing.Point(70, 13)
-        $card.Controls.Add($cardTitle)
-
-        $subtitle = New-Object System.Windows.Forms.Label
-        $subtitle.Text = $SubtitleText
-        $subtitle.ForeColor = $mutedColor
-        $subtitle.AutoSize = $true
-        $subtitle.Location = New-Object System.Drawing.Point(70, 39)
-        $card.Controls.Add($subtitle)
-
-        $textBox = New-Object System.Windows.Forms.TextBox
-        $textBox.Location = New-Object System.Drawing.Point(70, 68)
-        $textBox.Size = New-Object System.Drawing.Size(518, 27)
-        $textBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-        $card.Controls.Add($textBox)
-
-        $button = New-Object System.Windows.Forms.Button
-        $button.Text = '选择文件'
-        $button.Location = New-Object System.Drawing.Point(598, 65)
-        $button.Size = New-Object System.Drawing.Size(86, 31)
-        $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-        $button.FlatAppearance.BorderColor = $primaryColor
-        $button.BackColor = $surfaceColor
-        $button.ForeColor = $primaryColor
-        $button.Cursor = [System.Windows.Forms.Cursors]::Hand
-        $card.Controls.Add($button)
-
-        return @($card, $cardTitle, $subtitle, $textBox, $button, $iconPanel, $iconLabel)
-    }
-
-    $videoCard = Add-FileCard -TitleText '视频 m4s' -SubtitleText '选择 B 站视频分片（仅 MP4 使用）' -IconText '▶' -Top 148 -AccentColor $primaryColor
-    $videoPanel = $videoCard[0]
-    $inputLabel = $videoCard[1]
-    $videoSubtitle = $videoCard[2]
-    $inputTextBox = $videoCard[3]
-    $inputButton = $videoCard[4]
-    $videoIconPanel = $videoCard[5]
-    $videoIconLabel = $videoCard[6]
-
-    $audioCard = Add-FileCard -TitleText '音频 m4s' -SubtitleText '可选：与视频合并；转 MP3 时只需选择此文件' -IconText '♫' -Top 268 -AccentColor $primaryColor
-    $audioPanel = $audioCard[0]
-    $audioLabel = $audioCard[1]
-    $audioSubtitle = $audioCard[2]
-    $audioTextBox = $audioCard[3]
-    $audioButton = $audioCard[4]
-
-    $settingsPanel = New-Object System.Windows.Forms.Panel
-    $settingsPanel.Location = New-Object System.Drawing.Point(28, 388)
-    $settingsPanel.Size = New-Object System.Drawing.Size(704, 116)
-    $settingsPanel.BackColor = $surfaceColor
-    $settingsPanel.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $form.Controls.Add($settingsPanel)
-
-    $settingsTitle = New-Object System.Windows.Forms.Label
-    $settingsTitle.Text = '输出设置'
-    $settingsTitle.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10, [System.Drawing.FontStyle]::Bold)
-    $settingsTitle.ForeColor = $textColor
-    $settingsTitle.AutoSize = $true
-    $settingsTitle.Location = New-Object System.Drawing.Point(16, 12)
-    $settingsPanel.Controls.Add($settingsTitle)
-
-    $outputLabel = New-Object System.Windows.Forms.Label
-    $outputLabel.Text = '输出文件'
-    $outputLabel.AutoSize = $true
-    $outputLabel.ForeColor = $textColor
-    $outputLabel.Location = New-Object System.Drawing.Point(16, 48)
-    $settingsPanel.Controls.Add($outputLabel)
-
-    $outputTextBox = New-Object System.Windows.Forms.TextBox
-    $outputTextBox.Location = New-Object System.Drawing.Point(92, 42)
-    $outputTextBox.Size = New-Object System.Drawing.Size(496, 27)
-    $outputTextBox.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
-    $settingsPanel.Controls.Add($outputTextBox)
-
-    $outputButton = New-Object System.Windows.Forms.Button
-    $outputButton.Text = '另存为'
-    $outputButton.Location = New-Object System.Drawing.Point(598, 39)
-    $outputButton.Size = New-Object System.Drawing.Size(86, 31)
-    $outputButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $outputButton.FlatAppearance.BorderColor = $borderColor
-    $outputButton.BackColor = $surfaceColor
-    $outputButton.ForeColor = $textColor
-    $outputButton.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $settingsPanel.Controls.Add($outputButton)
+    $formatComboBox = New-Object System.Windows.Forms.ComboBox
+    $formatComboBox.DropDownStyle = 'DropDownList'
+    $formatComboBox.Items.AddRange(@('MP4', 'MP3'))
+    $formatComboBox.SelectedIndex = 0
+    $formatComboBox.Location = New-Object System.Drawing.Point(142, 181)
+    $formatComboBox.Size = New-Object System.Drawing.Size(112, 28)
+    $form.Controls.Add($formatComboBox)
 
     $bitrateLabel = New-Object System.Windows.Forms.Label
     $bitrateLabel.Text = '音频码率'
     $bitrateLabel.AutoSize = $true
-    $bitrateLabel.ForeColor = $textColor
-    $bitrateLabel.Location = New-Object System.Drawing.Point(16, 85)
-    $settingsPanel.Controls.Add($bitrateLabel)
+    $bitrateLabel.Location = New-Object System.Drawing.Point(288, 188)
+    $form.Controls.Add($bitrateLabel)
 
     $bitrateComboBox = New-Object System.Windows.Forms.ComboBox
     $bitrateComboBox.DropDownStyle = 'DropDownList'
     $bitrateComboBox.Items.AddRange(@('128 kbps', '192 kbps', '256 kbps', '320 kbps'))
     $bitrateComboBox.SelectedIndex = 1
-    $bitrateComboBox.Location = New-Object System.Drawing.Point(92, 78)
-    $bitrateComboBox.Size = New-Object System.Drawing.Size(140, 28)
-    $settingsPanel.Controls.Add($bitrateComboBox)
+    $bitrateComboBox.Location = New-Object System.Drawing.Point(358, 181)
+    $bitrateComboBox.Size = New-Object System.Drawing.Size(118, 28)
+    $form.Controls.Add($bitrateComboBox)
 
-    $statusTitle = New-Object System.Windows.Forms.Label
-    $statusTitle.Text = '转换状态'
-    $statusTitle.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 9, [System.Drawing.FontStyle]::Bold)
-    $statusTitle.ForeColor = $textColor
-    $statusTitle.AutoSize = $true
-    $statusTitle.Location = New-Object System.Drawing.Point(28, 522)
-    $form.Controls.Add($statusTitle)
-
-    $progressBar = New-Object System.Windows.Forms.ProgressBar
-    $progressBar.Location = New-Object System.Drawing.Point(28, 548)
-    $progressBar.Size = New-Object System.Drawing.Size(704, 12)
-    $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
-    $progressBar.Value = 0
-    $form.Controls.Add($progressBar)
+    $outputRow = Add-FileRow -LabelText '输出文件' -Top 226 -ButtonText '另存为...'
+    $outputTextBox = $outputRow[1]
+    $outputButton = $outputRow[2]
 
     $statusLabel = New-Object System.Windows.Forms.Label
-    $statusLabel.Text = '就绪，等待选择文件'
+    $statusLabel.Text = '就绪'
     $statusLabel.AutoEllipsis = $true
-    $statusLabel.Location = New-Object System.Drawing.Point(28, 569)
-    $statusLabel.Size = New-Object System.Drawing.Size(704, 22)
-    $statusLabel.ForeColor = $mutedColor
+    $statusLabel.Location = New-Object System.Drawing.Point(28, 280)
+    $statusLabel.Size = New-Object System.Drawing.Size(500, 24)
+    $statusLabel.ForeColor = [System.Drawing.Color]::DimGray
     $form.Controls.Add($statusLabel)
 
     $convertButton = New-Object System.Windows.Forms.Button
     $convertButton.Text = '开始转换'
-    $convertButton.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 12, [System.Drawing.FontStyle]::Bold)
-    $convertButton.Location = New-Object System.Drawing.Point(28, 606)
-    $convertButton.Size = New-Object System.Drawing.Size(704, 50)
-    $convertButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-    $convertButton.FlatAppearance.BorderSize = 0
-    $convertButton.FlatAppearance.MouseOverBackColor = $primaryHoverColor
-    $convertButton.BackColor = $primaryColor
-    $convertButton.ForeColor = [System.Drawing.Color]::White
-    $convertButton.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $convertButton.Font = New-Object System.Drawing.Font('Microsoft YaHei UI', 10, [System.Drawing.FontStyle]::Bold)
+    $convertButton.Location = New-Object System.Drawing.Point(548, 270)
+    $convertButton.Size = New-Object System.Drawing.Size(144, 42)
+    $convertButton.Anchor = 'Top, Right'
     $form.Controls.Add($convertButton)
 
+    $helpBox = New-Object System.Windows.Forms.GroupBox
+    $helpBox.Text = '怎么选文件？'
+    $helpBox.Location = New-Object System.Drawing.Point(28, 326)
+    $helpBox.Size = New-Object System.Drawing.Size(664, 80)
+    $helpBox.Anchor = 'Top, Bottom, Left, Right'
+    $form.Controls.Add($helpBox)
+
     $helpLabel = New-Object System.Windows.Forms.Label
-    $helpLabel.Text = '提示：转 MP3 只需音频文件；转 MP4 可选择视频并搭配音频文件。'
+    $helpLabel.Text = "• 转 MP3：只需选择音频 m4s，不需要视频文件。`r`n• 转 MP4：选择视频 m4s；若视频没有声音，再选择同一视频的音频 m4s。"
     $helpLabel.AutoSize = $true
-    $helpLabel.ForeColor = $mutedColor
-    $helpLabel.Location = New-Object System.Drawing.Point(29, 672)
-    $form.Controls.Add($helpLabel)
+    $helpLabel.Location = New-Object System.Drawing.Point(14, 24)
+    $helpBox.Controls.Add($helpLabel)
 
     $autoOutputPath = $true
 
-    $getSelectedFormat = {
-        if ($formatMp3Button.Checked) { return 'mp3' }
-        return 'mp4'
-    }
-
     $updateOutputPath = {
-        $selectedFormat = & $getSelectedFormat
+        $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
         $activeInputPath = if ($selectedFormat -eq 'mp3') { $audioTextBox.Text } else { $inputTextBox.Text }
         if ($autoOutputPath -and -not [string]::IsNullOrWhiteSpace($activeInputPath)) {
-            $extension = '.' + $selectedFormat
+            $extension = '.' + $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
             $outputTextBox.Text = [System.IO.Path]::ChangeExtension($activeInputPath, $extension)
         }
     }
@@ -573,8 +442,8 @@ function Show-ConverterWindow {
     $inputTextBox.Add_TextChanged({ & $updateOutputPath })
     $audioTextBox.Add_TextChanged({ & $updateOutputPath })
 
-    $applyFormatStyle = {
-        $isMp4 = $formatMp4Button.Checked
+    $formatComboBox.Add_SelectedIndexChanged({
+        $isMp4 = $formatComboBox.SelectedItem.ToString() -eq 'MP4'
         if (-not $isMp4 -and
             [string]::IsNullOrWhiteSpace($audioTextBox.Text) -and
             -not [string]::IsNullOrWhiteSpace($inputTextBox.Text)) {
@@ -583,31 +452,12 @@ function Show-ConverterWindow {
             $inputTextBox.Clear()
         }
 
-        $formatMp4Button.BackColor = if ($isMp4) { $primaryColor } else { $surfaceColor }
-        $formatMp4Button.ForeColor = if ($isMp4) { [System.Drawing.Color]::White } else { $textColor }
-        $formatMp4Button.FlatAppearance.BorderColor = if ($isMp4) { $primaryColor } else { $borderColor }
-        $formatMp3Button.BackColor = if ($isMp4) { $surfaceColor } else { $primaryColor }
-        $formatMp3Button.ForeColor = if ($isMp4) { $textColor } else { [System.Drawing.Color]::White }
-        $formatMp3Button.FlatAppearance.BorderColor = if ($isMp4) { $borderColor } else { $primaryColor }
-
         $inputTextBox.Enabled = $isMp4
         $inputButton.Enabled = $isMp4
-        $videoPanel.BackColor = if ($isMp4) { $surfaceColor } else { $backgroundColor }
-        $inputLabel.ForeColor = if ($isMp4) { $textColor } else { $disabledColor }
-        $videoSubtitle.ForeColor = if ($isMp4) { $mutedColor } else { $disabledColor }
-        $videoIconPanel.BackColor = if ($isMp4) { $primarySoftColor } else { $backgroundColor }
-        $videoIconLabel.ForeColor = if ($isMp4) { $primaryColor } else { $disabledColor }
-        $audioSubtitle.Text = if ($isMp4) { '可选：与视频合并；若视频已有声音可不选' } else { '选择音频文件即可转换，不需要视频文件' }
+        $inputLabel.ForeColor = if ($isMp4) { [System.Drawing.SystemColors]::ControlText } else { [System.Drawing.Color]::Gray }
+        $audioLabel.Text = if ($isMp4) { '配套音频（可选）' } else { '音频 m4s' }
         & $updateOutputPath
-    }
-
-    $formatMp4Button.Add_CheckedChanged({
-        if ($formatMp4Button.Checked) { & $applyFormatStyle }
     })
-    $formatMp3Button.Add_CheckedChanged({
-        if ($formatMp3Button.Checked) { & $applyFormatStyle }
-    })
-    & $applyFormatStyle
 
     $outputTextBox.Add_TextChanged({
         if ($outputTextBox.Focused) {
@@ -617,7 +467,7 @@ function Show-ConverterWindow {
 
     $outputButton.Add_Click({
         $dialog = New-Object System.Windows.Forms.SaveFileDialog
-        $selectedFormat = & $getSelectedFormat
+        $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
         $dialog.Filter = if ($selectedFormat -eq 'mp4') { 'MP4 视频 (*.mp4)|*.mp4' } else { 'MP3 音频 (*.mp3)|*.mp3' }
         $dialog.DefaultExt = $selectedFormat
         $dialog.AddExtension = $true
@@ -634,7 +484,7 @@ function Show-ConverterWindow {
 
     $convertButton.Add_Click({
         try {
-            $selectedFormat = & $getSelectedFormat
+            $selectedFormat = $formatComboBox.SelectedItem.ToString().ToLowerInvariant()
             if ($selectedFormat -eq 'mp3') {
                 if ([string]::IsNullOrWhiteSpace($audioTextBox.Text)) {
                     throw '请选择音频 m4s 文件。转 MP3 不需要视频文件。'
@@ -668,9 +518,7 @@ function Show-ConverterWindow {
 
             $convertButton.Enabled = $false
             $form.UseWaitCursor = $true
-            $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-            $progressBar.MarqueeAnimationSpeed = 25
-            $statusLabel.ForeColor = $primaryColor
+            $statusLabel.ForeColor = [System.Drawing.Color]::DarkOrange
             $statusLabel.Text = '正在转换，请稍候……'
             $form.Refresh()
 
@@ -682,8 +530,6 @@ function Show-ConverterWindow {
                 -Bitrate $selectedBitrate `
                 -Force
 
-            $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
-            $progressBar.Value = 100
             $statusLabel.ForeColor = [System.Drawing.Color]::ForestGreen
             $statusLabel.Text = "转换完成：$resultPath"
             [System.Windows.Forms.MessageBox]::Show(
@@ -695,8 +541,6 @@ function Show-ConverterWindow {
             ) | Out-Null
         }
         catch {
-            $progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
-            $progressBar.Value = 0
             $statusLabel.ForeColor = [System.Drawing.Color]::Firebrick
             $statusLabel.Text = '转换失败'
             [System.Windows.Forms.MessageBox]::Show(
@@ -713,7 +557,6 @@ function Show-ConverterWindow {
         }
     })
 
-    $form.AcceptButton = $convertButton
     $form.Add_Shown({ $form.Activate() })
     [void]$form.ShowDialog()
     $form.Dispose()
