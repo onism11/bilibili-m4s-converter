@@ -17,7 +17,9 @@ ffmpeg -version
 
 ## 图形界面
 
-双击 `启动转换器.cmd`。
+双击 `M4S-Converter.exe`，会直接打开图形界面，不显示命令行窗口。
+
+`M4S-Converter.exe`、`m4s-converter.ps1` 必须放在同一个文件夹中。`启动转换器.cmd` 是备用入口。
 
 ### 转 MP3
 
@@ -61,4 +63,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\m4s-converter.ps1 -Gui
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1
+```
+
+重新编译 EXE 入口：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-launcher.ps1
 ```
