@@ -11,6 +11,8 @@
   [下载最新版](https://github.com/onism11/bilibili-m4s-converter/releases/latest) · [推荐搭配 Video Roll](https://videoroll.app/)
 </div>
 
+![B站 M4S 转 MP3 / MP4 的 Windows 图形界面](assets/converter-window.png)
+
 ## 为什么需要它？
 
 从 B 站或其他网页保存的视频，有时会得到分离的 `.m4s` 视频流和音频流：视频没有声音，音频也无法直接放进常用播放器。
@@ -51,11 +53,10 @@ ffmpeg -version
 
 ### 2. 下载并运行
 
-1. 前往 [Releases](https://github.com/onism11/bilibili-m4s-converter/releases/latest) 下载 `M4S-Converter-Windows-v1.0.0.zip`。
-2. 解压整个压缩包，不要只取出 EXE。
-3. 双击 `M4S-Converter.exe`。
+1. 直接下载 [`M4S-Converter-Windows-v1.0.1.exe`](https://github.com/onism11/bilibili-m4s-converter/releases/latest/download/M4S-Converter-Windows-v1.0.1.exe)。
+2. 双击 EXE，选文件后点击“开始转换”。
 
-`M4S-Converter.exe`、`m4s-converter.ps1` 与 `assets` 文件夹需要放在一起。
+v1.0.1 起，EXE 已内嵌转换脚本与图标，不再需要把 `.ps1` 和 `assets` 放在旁边。需要命令行脚本或完整源码时，可下载 Release 中的 ZIP。
 
 ### 转 MP3
 
@@ -85,6 +86,24 @@ ffmpeg -version
 
 覆盖已有文件时加 `-Overwrite`。MP3 码率可通过 `-AudioBitrate 128`、`192`、`256` 或 `320` 指定。
 
+## 常见问题：m4s 文件怎么打开？
+
+### m4s 怎么转换成 MP3？
+
+打开本工具，输出格式选 `MP3`，只在“音频 m4s”一栏选择文件即可，不需要添加视频文件。这也适用于搜索 **m4s to mp3** 的场景。
+
+### B站缓存视频怎么转换成 MP4？
+
+在“视频 m4s”中选择视频分片；如果画面和声音是两个文件，再选择配套音频，输出格式选 `MP4`。这就是常见的 **m4s to mp4**、**B站视频怎么存成mp4** 的处理方式。
+
+### 如何下载B站缓存视频？
+
+本工具负责转换本地 `.m4s` 文件，不负责抓取网页内容。可先用 [Video Roll](https://videoroll.app/) 下载你有权保存的内容；若结果是 M4S 或分离音视频，再交给本工具合并或转换。
+
+### How to convert M4S to MP3 or MP4?
+
+Use this Windows video converter to turn an audio M4S file into MP3, remux a video M4S into MP4, or merge separate Bilibili video and audio M4S streams into one MP4 file. FFmpeg is required.
+
 ## 从源码构建
 
 重新编译 EXE 入口：
@@ -93,7 +112,7 @@ ffmpeg -version
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-launcher.ps1
 ```
 
-生成 Release ZIP 与 SHA-256 校验文件：
+生成单文件 EXE、Release ZIP 与 SHA-256 校验文件：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-release.ps1
