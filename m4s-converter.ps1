@@ -15,7 +15,9 @@ param(
 
     [switch]$Overwrite,
 
-    [switch]$Gui
+    [switch]$Gui,
+
+    [string]$CaptureGuiPath
 )
 
 Set-StrictMode -Version 2.0
@@ -278,6 +280,10 @@ function Invoke-M4sConversion {
 }
 
 function Show-ConverterWindow {
+    param(
+        [string]$CapturePath
+    )
+
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
@@ -562,13 +568,52 @@ function Show-ConverterWindow {
         }
     })
 
+    if (-not [string]::IsNullOrWhiteSpace($CapturePath)) {
+        $inputTextBox.Text = 'C:\Downloads\video.m4s'
+        $audioTextBox.Text = 'C:\Downloads\audio.m4s'
+        $outputTextBox.Text = 'C:\Downloads\video.mp4'
+        $form.TopMost = $true
+        $form.Show()
+        $form.Activate()
+        $convertButton.Select()
+        $form.Refresh()
+        Start-Sleep -Milliseconds 500
+
+        $captureFile = [System.IO.Path]::GetFullPath($CapturePath)
+        $captureDirectory = [System.IO.Path]::GetDirectoryName($captureFile)
+        if (-not (Test-Path -LiteralPath $captureDirectory -PathType Container)) {
+            New-Item -ItemType Directory -Path $captureDirectory -Force | Out-Null
+        }
+
+        $bitmap = New-Object System.Drawing.Bitmap($form.ClientSize.Width, $form.ClientSize.Height)
+        try {
+            $captureRectangle = New-Object System.Drawing.Rectangle(
+                0,
+                0,
+                $form.ClientSize.Width,
+                $form.ClientSize.Height
+            )
+            $form.DrawToBitmap($bitmap, $captureRectangle)
+            $bitmap.Save($captureFile, [System.Drawing.Imaging.ImageFormat]::Png)
+        }
+        finally {
+            $bitmap.Dispose()
+            $form.Close()
+            $form.Dispose()
+        }
+        return
+    }
+
     $form.Add_Shown({ $form.Activate() })
     [void]$form.ShowDialog()
     $form.Dispose()
 }
 
 try {
-    if ($Gui -or [string]::IsNullOrWhiteSpace($InputPath)) {
+    if (-not [string]::IsNullOrWhiteSpace($CaptureGuiPath)) {
+        Show-ConverterWindow -CapturePath $CaptureGuiPath
+    }
+    elseif ($Gui -or [string]::IsNullOrWhiteSpace($InputPath)) {
         Show-ConverterWindow
     }
     else {
