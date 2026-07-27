@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $projectDirectory = $PSScriptRoot
 $sourcePath = Join-Path $projectDirectory 'launcher\Program.cs'
 $outputPath = Join-Path $projectDirectory 'M4S-Converter.exe'
+$scriptPath = Join-Path $projectDirectory 'm4s-converter.ps1'
 $iconPath = Join-Path $projectDirectory 'assets\app-icon.ico'
 $compilerPath = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 
@@ -18,6 +19,10 @@ if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
     throw "找不到 EXE 图标：$iconPath"
 }
 
+if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
+    throw "找不到转换脚本：$scriptPath"
+}
+
 & $compilerPath `
     /nologo `
     /target:winexe `
@@ -25,6 +30,8 @@ if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
     /platform:anycpu `
     /reference:System.Windows.Forms.dll `
     "/win32icon:$iconPath" `
+    "/resource:$scriptPath,M4SConverter.Script" `
+    "/resource:$iconPath,M4SConverter.Icon" `
     "/out:$outputPath" `
     $sourcePath
 
