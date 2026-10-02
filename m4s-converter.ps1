@@ -270,7 +270,8 @@ function Invoke-M4sConversion {
         }
 
         if ($Force -and (Test-Path -LiteralPath $destinationFile -PathType Leaf)) {
-            [System.IO.File]::Replace($stagedOutput, $destinationFile, $null)
+            # PowerShell 5.1 会把 $null 转成空字符串；.NET 需要真正的 null 表示不留备份。
+            [System.IO.File]::Replace($stagedOutput, $destinationFile, [System.Management.Automation.Language.NullString]::Value)
         }
         else {
             # Move 不覆盖竞态中新出现的文件；未授权覆盖时仍保留它。
