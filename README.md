@@ -88,6 +88,8 @@ v1.0.1 起，EXE 已内嵌转换脚本与图标，不再需要把 `.ps1` 和 `as
 
 覆盖已有文件时加 `-Overwrite`。MP3 码率可通过 `-AudioBitrate 128`、`192`、`256` 或 `320` 指定。
 
+当前源码先在输出目录生成临时成品，转换成功后才提交到目标路径；失败时保留已有成品，并拒绝把输入文件或配套音频当作输出。同名、不同目录的带前缀音视频也可分别处理。这些安全修复尚未包含在已发布的 v1.0.1 EXE 中，需要从源码重新构建。
+
 ## 常见问题：m4s 文件怎么打开？
 
 ### m4s 怎么转换成 MP3？
@@ -126,7 +128,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-release.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\smoke-test.ps1
 ```
 
-测试会在系统临时目录生成约 1 秒的音视频，完成后自动清理。
+测试会在系统临时目录生成约 1 秒的音视频，检查合并、转码、同名带前缀文件、覆盖与失败保留、源文件保护，完成后自动清理。
 
 ## 说明
 

@@ -93,7 +93,7 @@ function Get-NormalizedMediaPath {
     # 不修改源文件；检测到这种前缀时，只在临时目录中生成去前缀副本。
     $stream = [System.IO.File]::OpenRead($SourcePath)
     try {
-        $headerLength = [Math]::Min(64, [int]$stream.Length)
+        $headerLength = [int][Math]::Min([long]64, $stream.Length)
         $header = New-Object byte[] $headerLength
         $readLength = $stream.Read($header, 0, $headerLength)
 
@@ -123,10 +123,10 @@ function Get-NormalizedMediaPath {
             return $SourcePath
         }
 
-        $normalizedPath = Join-Path $TemporaryDirectory ([System.IO.Path]::GetFileName($SourcePath))
-        if ([System.StringComparer]::OrdinalIgnoreCase.Equals($normalizedPath, $SourcePath)) {
-            $normalizedPath = Join-Path $TemporaryDirectory ("normalized-" + [System.IO.Path]::GetFileName($SourcePath))
-        }
+        # 音视频可能来自不同目录、却使用相同文件名；每份副本必须有独立路径。
+        $normalizedPath = Join-Path $TemporaryDirectory (
+            [Guid]::NewGuid().ToString('N') + '-' + [System.IO.Path]::GetFileName($SourcePath)
+        )
 
         $stream.Position = $prefixLength
         $outputStream = [System.IO.File]::Create($normalizedPath)
@@ -205,6 +205,11 @@ function Invoke-M4sConversion {
     }
 
     $destinationFile = Get-OutputFilePath -InputFile $sourceFile -OutputFormat $OutputFormat -RequestedPath $DestinationPath
+    if ([System.StringComparer]::OrdinalIgnoreCase.Equals($destinationFile, $sourceFile) -or
+        ($audioFile -and [System.StringComparer]::OrdinalIgnoreCase.Equals($destinationFile, $audioFile))) {
+        throw '输出文件不能与输入文件或配套音频文件相同。请选择其他输出位置。'
+    }
+
     if (Test-Path -LiteralPath $destinationFile) {
         if (-not $Force) {
             throw "输出文件已存在：$destinationFile。使用 -Overwrite 可覆盖。"
@@ -216,61 +221,64 @@ function Invoke-M4sConversion {
         New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
     }
 
-    $temporaryDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("bilibili-m4s-converter-" + [Guid]::NewGuid().ToString('N'))
+    # 临时输出与目标位于同一磁盘；成功后才移动或替换，失败时保留已有成品。
+    $temporaryDirectory = Join-Path $destinationDirectory ("bilibili-m4s-converter-" + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $temporaryDirectory | Out-Null
 
     try {
+        $stagedOutput = Join-Path $temporaryDirectory ("converted.$OutputFormat")
         $normalizedSource = Get-NormalizedMediaPath -SourcePath $sourceFile -TemporaryDirectory $temporaryDirectory
         $normalizedAudio = $null
         if ($audioFile) {
             $normalizedAudio = Get-NormalizedMediaPath -SourcePath $audioFile -TemporaryDirectory $temporaryDirectory
         }
 
-        $overwriteArgument = if ($Force) { '-y' } else { '-n' }
-
         if ($OutputFormat -eq 'mp3') {
             $arguments = @(
-                '-hide_banner', $overwriteArgument,
+                '-hide_banner', '-n',
                 '-i', $normalizedSource,
                 '-map', '0:a:0', '-vn',
                 '-c:a', 'libmp3lame', '-b:a', "${Bitrate}k",
-                $destinationFile
+                $stagedOutput
             )
             Invoke-Ffmpeg -FfmpegPath $ffmpegPath -Arguments $arguments
         }
         else {
             if ($normalizedAudio) {
                 $arguments = @(
-                    '-hide_banner', $overwriteArgument,
+                    '-hide_banner', '-n',
                     '-fflags', '+genpts', '-i', $normalizedSource,
                     '-fflags', '+genpts', '-i', $normalizedAudio,
                     '-map', '0:v:0', '-map', '1:a:0',
                     '-c:v', 'copy', '-c:a', 'aac', '-b:a', "${Bitrate}k",
                     '-shortest', '-movflags', '+faststart',
-                    $destinationFile
+                    $stagedOutput
                 )
             }
             else {
                 $arguments = @(
-                    '-hide_banner', $overwriteArgument,
+                    '-hide_banner', '-n',
                     '-fflags', '+genpts', '-i', $normalizedSource,
                     '-map', '0:v:0', '-map', '0:a:0?',
                     '-c:v', 'copy', '-c:a', 'aac', '-b:a', "${Bitrate}k",
                     '-movflags', '+faststart',
-                    $destinationFile
+                    $stagedOutput
                 )
             }
 
             Invoke-Ffmpeg -FfmpegPath $ffmpegPath -Arguments $arguments
         }
 
-        return $destinationFile
-    }
-    catch {
-        if (Test-Path -LiteralPath $destinationFile -PathType Leaf) {
-            Remove-Item -LiteralPath $destinationFile -Force -ErrorAction SilentlyContinue
+        if ($Force -and (Test-Path -LiteralPath $destinationFile -PathType Leaf)) {
+            # PowerShell 5.1 会把 $null 转成空字符串；.NET 需要真正的 null 表示不留备份。
+            [System.IO.File]::Replace($stagedOutput, $destinationFile, [System.Management.Automation.Language.NullString]::Value)
         }
-        throw
+        else {
+            # Move 不覆盖竞态中新出现的文件；未授权覆盖时仍保留它。
+            [System.IO.File]::Move($stagedOutput, $destinationFile)
+        }
+
+        return $destinationFile
     }
     finally {
         if (Test-Path -LiteralPath $temporaryDirectory -PathType Container) {
