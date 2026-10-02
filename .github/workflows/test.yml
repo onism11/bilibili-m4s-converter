@@ -1,0 +1,23 @@
+name: Windows conversion tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  conversion:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg
+        shell: powershell
+        run: |
+          choco install ffmpeg --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'FFmpeg installation failed.' }
+      - name: Run conversion regression suite
+        shell: powershell
+        run: .\tests\smoke-test.ps1
